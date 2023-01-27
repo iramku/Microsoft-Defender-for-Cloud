@@ -256,7 +256,7 @@ try
 
     #Loop through all storage accounts
     # GET https://management.azure.com/subscriptions/44e4eff8-1fcb-4a22-a7d6-992ac7286382/resourceGroups/CxE-Nicholas/providers/Microsoft.Storage/storageAccounts/cxenicholas/providers/microsoft.insights/metrics?api-version=2018-01-01&metricnames=transactions&timespan=2020-01-05T00:00:00Z/2020-01-05T23:59:59Z&interval=P1D
-    $Start = (Get-Date).AddDays(-7) | Get-Date -Hour 0 -Minute 0 -Second 0 | Get-Date -Format "yyyy-MM-ddThh:mm:ssZ"
+    $Start = (Get-Date).AddMonths(-1) | Get-Date -Hour 0 -Minute 0 -Second 0 | Get-Date -Format "yyyy-MM-ddThh:mm:ssZ"
     $End = (Get-Date).AddDays(-1) | Get-Date -Hour 23 -Minute 59 -Second 59 | Get-Date -Format "yyyy-MM-ddThh:mm:ssZ"
     $body = BuildBody GET
     $records = @()
@@ -294,7 +294,39 @@ try
     $records | Export-csv $ExportFile
     Write-Host "Total Blob and File Transactions is: $($Total)"
     Write-Host "Total Transactions / 10k is: $($Total/10000)"
-    Write-Host "Estimate Cost is (`$0.02/10k transactions): `$$($Total/10000*0.02) for the last seven days"
+    Write-Host "Estimate Cost is (`$0.02/10k transactions): `$$($Total/10000*0.02) for the last 1 month"
+    
+    
+##Group Records by storage account and save them in a new array
+$groupedrecords = $records | Group-Object -Property StorageAccount | Select-Object Name, @{Name="Total";Expression={($_.Group | Measure-Object -Property total -Sum).Sum}} 
+   
+
+#Initialize variables
+$baseCost = 10
+$threshold = 73000000
+$costPerMillion = 0.1492
+$totalCost = 0
+
+#loop through the array with grouped records
+
+foreach ($record in $groupedrecords) {
+    $storageAccount = $record.StorageAccount
+    $totalTransactions = $record.total
+    $excessiveTransactions = $totalTransactions - $threshold
+    if ($excessiveTransactions -gt 0) {
+        $excessiveCost = $excessiveTransactions * $costPerMillion / 1000000
+        $storageAccountCost = $baseCost + $excessiveCost
+    } else {
+        $storageAccountCost = $baseCost
+    }
+    $totalCost += $storageAccountCost
+}
+
+#print cost based on the new model
+Write-Host "Estimate Cost with new model is: `$$totalCost for the last 1 month"
+$groupedrecords | Format-Table -AutoSize 
+
+}
 }
 catch
 {
